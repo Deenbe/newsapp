@@ -77,6 +77,8 @@ var opts options = options{
 
 func init() {
 	flag.StringVar(&opts.Bucket, "bucket", "", "s3 bucket name")
+	flag.StringVar(&opts.Host, "host", "", "host interface to bind")
+	flag.IntVar(&opts.Port, "port", 8080, "host port to bind")
 }
 
 type services struct {
@@ -85,6 +87,10 @@ type services struct {
 
 func configureRoutes(services *services) http.Handler {
 	r := mux.NewRouter()
+
+	r.Path("/healthcheck").Methods("GET").HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		json.NewEncoder(res).Encode(map[string]string{"status": "healthy"})
+	})
 
 	r.Path("/v1/list").Methods("POST").HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		svc := services.post
