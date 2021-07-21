@@ -27,9 +27,15 @@ type options struct {
 	Port   int
 }
 
+type Post struct {
+	Caption string
+	Image   string
+}
+
 type postSvc struct {
 	Bucket   *string
 	Uploader *manager.Uploader
+	Client   *s3.Client
 }
 
 func (s *postSvc) CreateNew(ctx context.Context, caption string, image io.Reader, filename string) (string, error) {
@@ -50,6 +56,17 @@ func (s *postSvc) CreateNew(ctx context.Context, caption string, image io.Reader
 		return "", err
 	}
 	return key, nil
+}
+
+func (s *postSvc) List(ctx context.Context) ([]*Post, error) {
+	_, err := s.Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+		Bucket: s.Bucket,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, nil
 }
 
 func (s *postSvc) saveCaption(ctx context.Context, key *string, caption string) error {
