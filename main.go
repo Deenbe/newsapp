@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -46,12 +46,13 @@ func (s *postSvc) CreateNew(ctx context.Context, caption string, image io.Reader
 	now := time.Now().UTC()
 	key := fmt.Sprintf("%s/%s", now.Format("2006-01-02"), id)
 
-	err = s.saveCaption(ctx, aws.String(fmt.Sprintf("%s/post.txt", key)), caption)
-	if err != nil {
-		return "", err
+	if len(caption) > 256 {
+		return "", fmt.Errorf("caption cannot be longer than 256 characters: %d", len(caption))
 	}
 
-	err = s.saveImage(ctx, aws.String(fmt.Sprintf("%s/image%s", key, path.Ext(filename))), image)
+	encoding := base64.StdEncoding.WithPadding(base64.NoPadding)
+	post := encoding.EncodeToString([]byte(caption))
+	err = s.saveImage(ctx, aws.String(fmt.Sprintf("%s/%s/image%s", key, post, path.Ext(filename))), image)
 	if err != nil {
 		return "", err
 	}
@@ -67,16 +68,6 @@ func (s *postSvc) List(ctx context.Context) ([]*Post, error) {
 	}
 
 	return nil, nil
-}
-
-func (s *postSvc) saveCaption(ctx context.Context, key *string, caption string) error {
-	_, err := s.Uploader.Upload(ctx, &s3.PutObjectInput{
-		Bucket: s.Bucket,
-		Key:    key,
-		Body:   strings.NewReader(caption),
-	})
-
-	return err
 }
 
 func (s *postSvc) saveImage(ctx context.Context, key *string, image io.Reader) error {
