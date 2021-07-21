@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -28,6 +29,7 @@ type options struct {
 }
 
 type Post struct {
+	ID      string
 	Caption string
 	Image   string
 }
@@ -60,14 +62,35 @@ func (s *postSvc) CreateNew(ctx context.Context, caption string, image io.Reader
 }
 
 func (s *postSvc) List(ctx context.Context) ([]*Post, error) {
-	_, err := s.Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+	res, err := s.Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 		Bucket: s.Bucket,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return nil, nil
+	encoding := base64.StdEncoding.WithPadding(base64.NoPadding)
+	list := make([]*Post, 0)
+	for _, c := range res.Contents {
+		k := *c.Key
+		parts := strings.Split(k, "/")
+		// Discard the items created with old key pattern that does not store
+		// caption as a base64 string
+		if len(parts) != 4 {
+			continue
+		}
+		caption, err := encoding.DecodeString(parts[2])
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, &Post{
+			ID:      parts[1],
+			Caption: string(caption),
+			Image:   k,
+		})
+	}
+
+	return list, nil
 }
 
 func (s *postSvc) saveImage(ctx context.Context, key *string, image io.Reader) error {
@@ -122,6 +145,17 @@ func configureRoutes(services *services) http.Handler {
 		json.NewEncoder(res).Encode(map[string]interface{}{"id": id})
 	})
 
+	r.Path("/v1/list").Methods("GET").HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		svc := services.post
+		posts, err := svc.List(req.Context())
+		if err != nil {
+			res.WriteHeader(http.StatusInternalServerError)
+			log.Printf("%v\n", err)
+			return
+		}
+		json.NewEncoder(res).Encode(posts)
+	})
+
 	return r
 }
 
@@ -136,6 +170,7 @@ func initServices(opts *options) *services {
 	svc := &postSvc{
 		Bucket:   aws.String(opts.Bucket),
 		Uploader: manager.NewUploader(s3Client),
+		Client:   s3Client,
 	}
 
 	return &services{
@@ -169,5 +204,8 @@ func main() {
 	flag.Parse()
 	log.SetFlags(log.Llongfile)
 	handler := configureRoutes(initServices(validateOptions()))
-	startServer(&opts, handler)
+	err := startServer(&opts, handler)
+	if err != nil {
+		panic(err)
+	}
 }
