@@ -17,6 +17,6 @@ count: 1       # Number of tasks that should be running in your service.
 # You can override any of the values defined above by environment.
 environments:
  prod:
-  cpu: 1
-  memory: 1024
+  cpu: 1024
+  memory: 2048
   count: 2               # Number of tasks to run for the "test" environment.
